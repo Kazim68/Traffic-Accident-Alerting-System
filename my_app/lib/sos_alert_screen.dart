@@ -15,7 +15,7 @@ class SOSAlertScreen extends StatefulWidget {
 class _SOSAlertScreenState extends State<SOSAlertScreen> {
   int timer = 10; // Timer countdown duration
   late Timer countdownTimer;
-  String emergencyContact = "1234567890"; // Default emergency contact number
+  String emergencyContact = "03444571722"; // Default emergency contact number
   late File contactFile;
 
   @override
@@ -69,25 +69,28 @@ class _SOSAlertScreenState extends State<SOSAlertScreen> {
       if (await canLaunchUrl(phoneUri)) {
         await launchUrl(phoneUri);
       } else {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text("Error"),
-            content: const Text("Unable to place the call."),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("OK"),
-              ),
-            ],
-          ),
-        );
+        _showErrorDialog("Unable to place the call.");
       }
     } catch (e) {
       print("Error making call: $e");
     }
   }
 
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Error"),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
+    );
+  }
   @override
   void dispose() {
     countdownTimer.cancel();

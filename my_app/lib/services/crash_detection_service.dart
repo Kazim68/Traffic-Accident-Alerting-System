@@ -3,6 +3,7 @@ import 'package:sensors_plus/sensors_plus.dart';
 import 'dart:math';
 import 'dart:async';
 import '../sos_alert_screen.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class CrashDetectionService {
   double threshold = 15.0; // Threshold for crash detection (m/s²)
@@ -10,6 +11,8 @@ class CrashDetectionService {
       5; // Number of significant changes to detect a crash
   Duration timeWindow = Duration(seconds: 2); // Time window to monitor changes
   List<DateTime> significantChanges = []; // Timestamps of significant changes
+  final FlutterLocalNotificationsPlugin _notificationsPlugin =
+      FlutterLocalNotificationsPlugin();
 
   late StreamSubscription<AccelerometerEvent> _subscription;
 
@@ -35,39 +38,81 @@ class CrashDetectionService {
     return sqrt(linearX * linearX + linearY * linearY + linearZ * linearZ);
   }
 
-void startListeningForCrashes(BuildContext context) {
-  _subscription = accelerometerEvents.listen((event) {
-    double resultantAcceleration = calculateFilteredAcceleration(event.x, event.y, event.z);
+  CrashDetectionService(BuildContext context) {
+    _initializeNotifications(context);
+  }
+  void _initializeNotifications(BuildContext context) {
+    const androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const settings = InitializationSettings(android: androidSettings);
+    _notificationsPlugin.initialize(
+      settings,
+      onDidReceiveNotificationResponse: (response) {
+        if (response.payload == 'CRASH_ALERT') {
+          // Open SOS Alert Screen
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => SOSAlertScreen()),
+          );
+        }
+      },
+    );
+  }
 
-    if (resultantAcceleration > threshold) {
-      int now = DateTime.now().millisecondsSinceEpoch;
+  Future<void> _sendCrashNotification(BuildContext context) async {
+    const androidDetails = AndroidNotificationDetails(
+      'crash_channel',
+      'Crash Detection',
+      channelDescription: 'Alerts for crash detection',
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+    );
+    const details = NotificationDetails(android: androidDetails);
 
-      if (startTime == 0) {
-        startTime = now;
-      }
+    await _notificationsPlugin.show(
+      0,
+      'Crash Detected',
+      'Tap to open SOS Alert screen.',
+      details,
+      payload: 'CRASH_ALERT',
+    );
+  }
 
-      int elapsedTime = now - startTime;
+  void startListeningForCrashes(BuildContext context) {
+    _subscription = accelerometerEvents.listen((event) {
+      double resultantAcceleration =
+          calculateFilteredAcceleration(event.x, event.y, event.z);
 
-      if (elapsedTime > timeWindow.inMilliseconds) {
-        // Reset logic if too much time has passed without sufficient movements
-        resetShakeDetection();
-      } else {
-        moveCount++;
+      if (resultantAcceleration > threshold) {
+        int now = DateTime.now().millisecondsSinceEpoch;
 
-        if (moveCount > 5) { // Adjust movement count threshold
-          navigateToSOSAlert(context);
+        if (startTime == 0) {
+          startTime = now;
+        }
+
+        int elapsedTime = now - startTime;
+
+        if (elapsedTime > timeWindow.inMilliseconds) {
+          // Reset logic if too much time has passed without sufficient movements
           resetShakeDetection();
+        } else {
+          moveCount++;
+
+          if (moveCount > 5) {
+            // Adjust movement count threshold
+            _sendCrashNotification(context);
+            resetShakeDetection();
+          }
         }
       }
-    }
-  });
-}
+    });
+  }
 
-void resetShakeDetection() {
-  moveCount = 0;
-  startTime = 0;
-}
-
+  void resetShakeDetection() {
+    moveCount = 0;
+    startTime = 0;
+  }
 
   // Stop listening for crashes
   void stopListening() {

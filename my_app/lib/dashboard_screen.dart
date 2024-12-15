@@ -15,7 +15,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    crashDetectionService = CrashDetectionService();
+    crashDetectionService = CrashDetectionService(context);
     crashDetectionService.startListeningForCrashes(context); // Start crash detection
   }
 
