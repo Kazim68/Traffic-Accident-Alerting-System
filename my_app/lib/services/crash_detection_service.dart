@@ -15,40 +15,59 @@ class CrashDetectionService {
 
   double previousX = 0.0, previousY = 0.0, previousZ = 0.0;
   double alpha =
-      0.1; // Smoothing factor, you can adjust it to control the sensitivity
+      0.8; // Smoothing factor, you can adjust it to control the sensitivity
+  List<double> mGravity = [0.0, 0.0, 0.0];
+  int moveCount = 0;
+  int startTime = 0;
 
   double calculateFilteredAcceleration(double x, double y, double z) {
-    // Apply exponential smoothing
-    double filteredX = alpha * x + (1 - alpha) * previousX;
-    double filteredY = alpha * y + (1 - alpha) * previousY;
-    double filteredZ = alpha * z + (1 - alpha) * previousZ;
+    // Gravity components
+    mGravity[0] = alpha * mGravity[0] + (1 - alpha) * x;
+    mGravity[1] = alpha * mGravity[1] + (1 - alpha) * y;
+    mGravity[2] = alpha * mGravity[2] + (1 - alpha) * z;
 
-    // Store the smoothed values for the next iteration
-    previousX = filteredX;
-    previousY = filteredY;
-    previousZ = filteredZ;
+    // Linear acceleration (removing gravity)
+    double linearX = x - mGravity[0];
+    double linearY = y - mGravity[1];
+    double linearZ = z - mGravity[2];
 
-    // Calculate the resultant acceleration
-    return sqrt(
-        filteredX * filteredX + filteredY * filteredY + filteredZ * filteredZ);
+    // Calculate resultant linear acceleration
+    return sqrt(linearX * linearX + linearY * linearY + linearZ * linearZ);
   }
 
-  // Start listening for crashes
-  void startListeningForCrashes(BuildContext context) {
-    _subscription = accelerometerEvents.listen((event) {
-      double resultantAcceleration =
-          calculateFilteredAcceleration(event.x, event.y, event.z);
+void startListeningForCrashes(BuildContext context) {
+  _subscription = accelerometerEvents.listen((event) {
+    double resultantAcceleration = calculateFilteredAcceleration(event.x, event.y, event.z);
 
-      if (resultantAcceleration > threshold) {
-        significantChanges.add(DateTime.now());
-        cleanOldTimestamps();
+    if (resultantAcceleration > threshold) {
+      int now = DateTime.now().millisecondsSinceEpoch;
 
-        if (significantChanges.length >= crashDetectionWindow) {
+      if (startTime == 0) {
+        startTime = now;
+      }
+
+      int elapsedTime = now - startTime;
+
+      if (elapsedTime > timeWindow.inMilliseconds) {
+        // Reset logic if too much time has passed without sufficient movements
+        resetShakeDetection();
+      } else {
+        moveCount++;
+
+        if (moveCount > 5) { // Adjust movement count threshold
           navigateToSOSAlert(context);
+          resetShakeDetection();
         }
       }
-    });
-  }
+    }
+  });
+}
+
+void resetShakeDetection() {
+  moveCount = 0;
+  startTime = 0;
+}
+
 
   // Stop listening for crashes
   void stopListening() {
@@ -61,11 +80,10 @@ class CrashDetectionService {
   }
 
   void cleanOldTimestamps() {
-  significantChanges.removeWhere((timestamp) {
-    return DateTime.now().difference(timestamp) > timeWindow;
-  });
-}
-
+    significantChanges.removeWhere((timestamp) {
+      return DateTime.now().difference(timestamp) > timeWindow;
+    });
+  }
 
   // Navigate to the SOS Alert screen
   void navigateToSOSAlert(BuildContext context) {
