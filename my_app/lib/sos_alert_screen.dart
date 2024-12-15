@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:my_app/dashboard_screen.dart';
 import 'dart:async';
+import 'dart:io'; // For file handling
+import 'package:path_provider/path_provider.dart'; // For accessing app directories
+import 'package:url_launcher/url_launcher.dart';
 
 class SOSAlertScreen extends StatefulWidget {
   const SOSAlertScreen({super.key});
@@ -9,13 +13,38 @@ class SOSAlertScreen extends StatefulWidget {
 }
 
 class _SOSAlertScreenState extends State<SOSAlertScreen> {
-  int timer = 10;
+  int timer = 10; // Timer countdown duration
   late Timer countdownTimer;
+  String emergencyContact = "1234567890"; // Default emergency contact number
+  late File contactFile;
 
   @override
   void initState() {
     super.initState();
+    _loadEmergencyContact(); // Load the emergency contact from the file
     startTimer();
+  }
+
+  // Load the emergency contact from the file
+  Future<void> _loadEmergencyContact() async {
+    try {
+      // Get the app's directory
+      final directory = await getApplicationDocumentsDirectory();
+      contactFile = File('${directory.path}/emergency_contact.txt');
+
+      if (await contactFile.exists()) {
+        // If the file exists, read the stored emergency contact
+        String storedContact = await contactFile.readAsString();
+        setState(() {
+          emergencyContact = storedContact.trim(); // Trim to avoid extra spaces
+        });
+      } else {
+        // If the file doesn't exist, create it with the default emergency contact
+        await contactFile.writeAsString(emergencyContact);
+      }
+    } catch (e) {
+      print('Error initializing contact file: $e');
+    }
   }
 
   void startTimer() {
@@ -27,25 +56,36 @@ class _SOSAlertScreenState extends State<SOSAlertScreen> {
       } else {
         // Timer ends, perform auto-call action
         timer.cancel();
-        showAutoCallMessage();
+        makeEmergencyCall();
       }
     });
   }
 
-  void showAutoCallMessage() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text("Calling Emergency Contact"),
-        content: Text("Ringing alert notification..."),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text("OK"),
+  // Make a phone call to the emergency contact
+  void makeEmergencyCall() async {
+    final Uri phoneUri = Uri(scheme: 'tel', path: emergencyContact);
+
+    try {
+      if (await canLaunchUrl(phoneUri)) {
+        await launchUrl(phoneUri);
+      } else {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Error"),
+            content: const Text("Unable to place the call."),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("OK"),
+              ),
+            ],
           ),
-        ],
-      ),
-    );
+        );
+      }
+    } catch (e) {
+      print("Error making call: $e");
+    }
   }
 
   @override
@@ -85,11 +125,13 @@ class _SOSAlertScreenState extends State<SOSAlertScreen> {
               ),
             ),
             const SizedBox(height: 30),
-            // SOS Cancel Button
             ElevatedButton(
               onPressed: () {
                 countdownTimer.cancel();
-                Navigator.pop(context); // Go back to previous screen
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => DashboardScreen()),
+                );
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green, // Button color
@@ -107,7 +149,6 @@ class _SOSAlertScreenState extends State<SOSAlertScreen> {
               ),
             ),
             const SizedBox(height: 30),
-            // Timer Display
             Text(
               timer.toString(),
               style: const TextStyle(
