@@ -3,26 +3,37 @@ import 'package:my_app/dashboard_screen.dart';
 import 'dart:async';
 import 'dart:io'; // For file handling
 import 'package:path_provider/path_provider.dart'; // For accessing app directories
-import 'package:url_launcher/url_launcher.dart';
+//import 'package:url_launcher/url_launcher.dart';
+import "../services/crash_detection_service.dart";
 
 class SOSAlertScreen extends StatefulWidget {
-  const SOSAlertScreen({super.key});
+  final int timerValue; // Accept timer value as a parameter
+  final VoidCallback stopTimerCallback; // Callback to stop the timer
+  final ValueNotifier<int> timerNotifier; // Timer notifier
+
+  const SOSAlertScreen({
+    Key? key,
+    required this.timerValue,
+    required this.stopTimerCallback,
+    required this.timerNotifier,
+  }) : super(key: key);
 
   @override
   _SOSAlertScreenState createState() => _SOSAlertScreenState();
 }
 
 class _SOSAlertScreenState extends State<SOSAlertScreen> {
-  int timer = 10; // Timer countdown duration
-  late Timer countdownTimer;
+  late int displayedTimerValue;
   String emergencyContact = "03444571722"; // Default emergency contact number
   late File contactFile;
+  late CrashDetectionService crashDetectionService;
 
   @override
   void initState() {
     super.initState();
     _loadEmergencyContact(); // Load the emergency contact from the file
-    startTimer();
+    displayedTimerValue = widget.timerValue;
+    //startTimer();
   }
 
   // Load the emergency contact from the file
@@ -47,54 +58,64 @@ class _SOSAlertScreenState extends State<SOSAlertScreen> {
     }
   }
 
-  void startTimer() {
-    countdownTimer = Timer.periodic(Duration(seconds: 1), (timer) {
-      if (this.timer > 0) {
-        setState(() {
-          this.timer--;
-        });
-      } else {
-        // Timer ends, perform auto-call action
-        timer.cancel();
-        makeEmergencyCall();
-      }
-    });
-  }
+  // void startTimer() {
+  //   countdownTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+  //     if (this.timer > 0) {
+  //       setState(() {
+  //         this.timer--;
+  //       });
+  //     } else {
+  //       // Timer ends, perform auto-call action
+  //       timer.cancel();
+  //       makeEmergencyCall();
+  //     }
+  //   });
+  // }
 
-  // Make a phone call to the emergency contact
-  void makeEmergencyCall() async {
-    final Uri phoneUri = Uri(scheme: 'tel', path: emergencyContact);
+  // // Make a phone call to the emergency contact
+  // void makeEmergencyCall() async {
+  //   final Uri phoneUri = Uri(scheme: 'tel', path: emergencyContact);
 
-    try {
-      if (await canLaunchUrl(phoneUri)) {
-        await launchUrl(phoneUri);
-      } else {
-        _showErrorDialog("Unable to place the call.");
-      }
-    } catch (e) {
-      print("Error making call: $e");
-    }
-  }
+  //   try {
+  //     if (await canLaunchUrl(phoneUri)) {
+  //       await launchUrl(phoneUri);
+  //     } else {
+  //       _showErrorDialog("Unable to place the call.");
+  //     }
+  //   } catch (e) {
+  //     print("Error making call: $e");
+  //   }
+  // }
 
-  void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Error"),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("OK"),
-          ),
-        ],
-      ),
-    );
-  }
+  // void _showErrorDialog(String message) {
+  //   showDialog(
+  //     context: context,
+  //     builder: (context) => AlertDialog(
+  //       title: const Text("Error"),
+  //       content: Text(message),
+  //       actions: [
+  //         TextButton(
+  //           onPressed: () => Navigator.pop(context),
+  //           child: const Text("OK"),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
+
   @override
   void dispose() {
-    countdownTimer.cancel();
+    //countdownTimer.cancel();
+    widget.stopTimerCallback(); // Stop the timer
+    crashDetectionService = CrashDetectionService(context);
+    crashDetectionService.startListeningForCrashes(context); // Start crash detection
     super.dispose();
+  }
+
+  void updateTimer(int newValue) {
+    setState(() {
+      displayedTimerValue = newValue;
+    });
   }
 
   @override
@@ -130,7 +151,7 @@ class _SOSAlertScreenState extends State<SOSAlertScreen> {
             const SizedBox(height: 30),
             ElevatedButton(
               onPressed: () {
-                countdownTimer.cancel();
+                widget.stopTimerCallback(); // Call the callback to stop the timer
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => DashboardScreen()),
@@ -152,13 +173,18 @@ class _SOSAlertScreenState extends State<SOSAlertScreen> {
               ),
             ),
             const SizedBox(height: 30),
-            Text(
-              timer.toString(),
-              style: const TextStyle(
-                color: Colors.black,
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-              ),
+            ValueListenableBuilder<int>(
+              valueListenable: widget.timerNotifier,
+              builder: (context, value, child) {
+                return Text(
+                  value.toString(),
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                  ),
+                );
+              },
             ),
           ],
         ),
