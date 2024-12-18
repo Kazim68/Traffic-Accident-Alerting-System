@@ -10,14 +10,19 @@ import 'dart:io'; // For file handling
 import 'package:path_provider/path_provider.dart'; // For accessing app directories
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-
+// import 'package:telephony/telephony.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:background_sms/background_sms.dart';
 
 class CrashDetectionService {
-   static const MethodChannel _methodChannel = MethodChannel('foregroundServiceChannel');
+  static const MethodChannel _methodChannel =
+      MethodChannel('foregroundServiceChannel');
 
   void makeEmergencyCallInForeground(String contact) {
     _methodChannel.invokeMethod('startForegroundService', {"contact": contact});
   }
+
   double threshold = 15.0; // Threshold for crash detection (m/s²)
   int crashDetectionWindow =
       5; // Number of significant changes to detect a crash
@@ -40,7 +45,6 @@ class CrashDetectionService {
   late File contactFile;
   ValueNotifier<int> timerNotifier =
       ValueNotifier<int>(10); // Initial timer value
-      
 
   double calculateFilteredAcceleration(double x, double y, double z) {
     // Gravity components
@@ -63,14 +67,20 @@ class CrashDetectionService {
     _initializeNotifications(context);
   }
 
-   Future<void> checkPermissions() async {
-  if (await Permission.phone.isGranted) {
-    print("CALL_PHONE permission granted");
-  } else {
-    print("CALL_PHONE permission denied");
-    await Permission.phone.request();
+  Future<void> checkPermissions() async {
+    await [
+      Permission.phone,
+      Permission.sms,
+      Permission.locationWhenInUse,
+    ].request();
+
+    if (await Permission.phone.isGranted) {
+      print("CALL_PHONE permission granted");
+    } else {
+      print("CALL_PHONE permission denied");
+      await Permission.phone.request();
+    }
   }
-}
 
   void _initializeNotifications(BuildContext context) {
     const androidSettings =
@@ -121,17 +131,99 @@ class CrashDetectionService {
     }
   }
 
+  // final Telephony telephony = Telephony.instance;
+  // void sendSMS(String message, String contact) async {
+  //   // Added try-catch for error handling
+  //   bool permissionsGranted = await telephony.requestSmsPermissions ?? false;
+  //   if (permissionsGranted) {
+  //     try {
+  //       await telephony.sendSms(
+  //         to: contact,
+  //         message: message,
+  //       );
+  //       print("SMS sent successfully to $contact.");
+  //     } catch (e) {
+  //       print("Failed to send SMS: $e");
+  //     }
+  //   } else {
+  //     print("SMS permission not granted.");
+  //   }
+  // }
+
+  Future<bool> isInternetAvailable() async {
+    // Added error handling
+    try {
+      var connectivityResult = await Connectivity().checkConnectivity();
+      return connectivityResult == ConnectivityResult.mobile ||
+          connectivityResult == ConnectivityResult.wifi;
+    } catch (e) {
+      print("Error checking internet connectivity: $e");
+      return false;
+    }
+  }
+
+  Future<Position?> getCurrentLocation() async {
+    // Added this function for location fetching
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      print("Location services are disabled.");
+      return null;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        print("Location permissions are denied.");
+        return null;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      print("Location permissions are permanently denied.");
+      return null;
+    }
+
+    return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high);
+  }
 
   void startEmergencyTimer(BuildContext context) {
-    countdownTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+    countdownTimer = Timer.periodic(Duration(seconds: 1), (timer) async {
       if (timerValue > 0) {
         timerValue--;
         timerNotifier.value = timerValue; // Notify listeners of the change
       } else {
         timer.cancel();
+        timerNotifier.dispose();
         //makeEmergencyCall();
-        // message 
+        // message
 
+        // Check internet availability
+        bool hasInternet = await isInternetAvailable();
+
+        // Fetch location if internet is available
+        String message;
+        if (hasInternet) {
+          Position? position = await getCurrentLocation();
+          if (position != null) {
+            message =
+                "I have had an accident. My location is: (${position.latitude}, ${position.longitude}).";
+          } else {
+            message = "I have had an accident. Please call me!";
+          }
+        } else {
+          message = "I have had an accident. Track me!";
+        }
+
+        // Send SMS
+        SmsStatus result = await BackgroundSms.sendMessage(
+            phoneNumber: emergencyContact, message: message);
+        if (result == SmsStatus.sent) {
+          print("Sent");
+        } else {
+          print("Failed");
+        }
         makeEmergencyCallInForeground(emergencyContact);
       }
     });
@@ -163,30 +255,31 @@ class CrashDetectionService {
   }
 
   Future<void> _sendCrashNotification(BuildContext context) async {
-  final androidDetails = AndroidNotificationDetails(
-    'crash_channel',
-    'Crash Detection',
-    channelDescription: 'Alerts for crash detection',
-    importance: Importance.high,
-    priority: Priority.high,
-    playSound: true,
-    enableVibration: true, // Enable vibration
-    vibrationPattern: Int64List.fromList([0, 1000, 500, 1000]), // Custom pattern
-    visibility: NotificationVisibility.public, // Visible on lock screen
-    fullScreenIntent: true, // Opens the app directly
-    sound: RawResourceAndroidNotificationSound('alarm'), // Custom alarm sound
-  );
+    final androidDetails = AndroidNotificationDetails(
+      'crash_channel',
+      'Crash Detection',
+      channelDescription: 'Alerts for crash detection',
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+      enableVibration: true, // Enable vibration
+      vibrationPattern:
+          Int64List.fromList([0, 1000, 500, 1000]), // Custom pattern
+      visibility: NotificationVisibility.public, // Visible on lock screen
+      fullScreenIntent: true, // Opens the app directly
+      sound: RawResourceAndroidNotificationSound('alarm'), // Custom alarm sound
+    );
 
-  final details = NotificationDetails(android: androidDetails);
+    final details = NotificationDetails(android: androidDetails);
 
-  await _notificationsPlugin.show(
-    0,
-    'Crash Detected',
-    'Tap to open SOS Alert screen.',
-    details,
-    payload: 'CRASH_ALERT',
-  );
-}
+    await _notificationsPlugin.show(
+      0,
+      'Crash Detected',
+      'Tap to open SOS Alert screen.',
+      details,
+      payload: 'CRASH_ALERT',
+    );
+  }
 
   void startListeningForCrashes(BuildContext context) {
     _subscription = accelerometerEvents.listen((event) {
@@ -212,6 +305,7 @@ class CrashDetectionService {
             // Adjust movement count threshold
             //_sendCrashNotification(context);
             timerValue = 10;
+            _sendCrashNotification(context);
             startEmergencyTimer(context);
             resetShakeDetection();
           }
