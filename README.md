@@ -79,3 +79,8 @@ The accident detection system uses a **threshold-based algorithm** with the foll
 
 ## Conclusion
 The **Traffic Accident Detection and Alerting System** is a step forward in reducing road accident fatalities by ensuring timely alerts and assistance. By integrating advanced algorithms with user-friendly functionality, the app significantly enhances road safety and aligns with global SDGs for health and safety.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE). You are free to use, modify, and distribute this software, subject to the terms of the license.
+
